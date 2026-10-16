@@ -15,15 +15,17 @@ See [docs/FEATURES.md](docs/FEATURES.md) for the long feature list (partly histo
 All builds are signed with the same certificate, so new versions install over old ones in place.
 
 ## OTA updates
-⋮ → Check updates (and a periodic background check) reads every mirror and takes the **highest versionCode**:
-- GitHub: `https://api.github.com/repos/noozo/pol-80/releases/latest` (`latest.json` asset, else the `vNN`/`v0.NN` tag + APK asset), from 0.50
-- Google Doc export + Drive `latest.json` (legacy mirrors), plus old paste.rs fallbacks
+From 0.51, ⋮ → Check updates (and a periodic background check) reads **only** GitHub:
+`https://api.github.com/repos/noozo/pol-80/releases/latest` (anonymous). It uses the release's `latest.json`
+asset, falling back to the `v0.NN` tag + `sha256: …` in the release notes + the APK asset.
+The old Google Doc / Drive / paste.rs mirrors were removed (0.50 and earlier still read them).
 
-The APK is downloaded (redirects followed), checked against the `sha256` in latest.json, then handed to the system installer.
+The APK is downloaded (redirects followed), checked against the `sha256`, then handed to the system installer.
+To ship: create a release `v0.NN` marked latest with `POL-80-0.NN.apk` and `latest.json`.
 
 `latest.json` format:
 ```json
-{"versionCode": 50, "versionName": "0.50-github-ota", "apkUrl": "https://…/POL-80-0.50.apk", "sha256": "…", "notes": "…"}
+{"versionCode": 51, "versionName": "0.51-gh-only", "apkUrl": "https://…/POL-80-0.50.apk", "sha256": "…", "notes": "…"}
 ```
 
 ## Build

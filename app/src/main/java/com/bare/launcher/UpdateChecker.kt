@@ -18,13 +18,12 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * GitHub releases + Google Drive / HTTPS OTA updates for POL-80.
+ * GitHub-only OTA updates for POL-80 (0.51+).
  *
- * Fetches latest.json from every mirror in [latestJsonCandidates] (Doc export, Drive
- * JSON, then immutable paste.rs fallbacks) and keeps the **maximum** versionCode.
- * First-success is unsafe: 0.39 stopped on paste.rs copies stuck at versionCode 38 and
- * reported up to date. When the winning remote versionCode > local, downloads the APK
- * (apkUrl or Drive apkDriveFileId), verifies sha256, and launches the package installer.
+ * Reads https://api.github.com/repos/noozo/pol-80/releases/latest anonymously: the
+ * latest.json asset first, else versionCode from the tag (v0.51 -> 51) with the sha256
+ * from the release body. When remote versionCode > local, downloads the APK asset
+ * (redirects followed), verifies sha256, and launches the package installer.
  *
  * Snooze: tapping Later stores the remote versionCode + 24h; prompts resume only when
  * a newer versionCode appears or the 24h window elapses.
@@ -34,25 +33,10 @@ object UpdateChecker {
     data class LatestInfo(
         val versionCode: Int,
         val versionName: String,
-        val apkDriveFileId: String?,
         val apkUrl: String?,
         val sha256: String,
         val notes: String?,
-    ) {
-        fun downloadUrl(): String? = downloadUrlCandidates().firstOrNull()
-
-        /** Prefer direct https apkUrl, then Drive usercontent / uc mirrors. */
-        fun downloadUrlCandidates(): List<String> {
-            val out = linkedSetOf<String>()
-            apkUrl?.trim()?.takeIf { it.startsWith("https://") }?.let { out += it }
-            val id = apkDriveFileId?.trim().orEmpty()
-            if (id.isNotEmpty()) {
-                out += driveDownloadUrl(id)
-                out += "https://drive.google.com/uc?export=download&id=$id&confirm=t"
-            }
-            return out.toList()
-        }
-    }
+    )
 
     sealed class CheckResult {
         data class Available(val info: LatestInfo) : CheckResult()
@@ -73,66 +57,17 @@ object UpdateChecker {
     private const val SNOOZE_MS = 24L * 60L * 60L * 1000L
     const val AUTO_CHECK_INTERVAL_MS = 15L * 60L * 1000L
 
-    fun latestJsonCandidates(): List<String> {
-        val out = linkedSetOf<String>()
-        BuildConfig.UPDATE_JSON_URL.trim().takeIf { it.startsWith("https://") }?.let { out += it }
-        BuildConfig.UPDATE_JSON_DRIVE_FILE_ID.trim().takeIf { it.isNotEmpty() }?.let { id ->
-            out += driveDownloadUrl(id)
-            // Legacy uc? host (some networks resolve usercontent poorly).
-            out += "https://drive.google.com/uc?export=download&id=$id&confirm=t"
-        }
-        BuildConfig.UPDATE_JSON_FALLBACK_URL.trim().takeIf { it.startsWith("https://") }?.let { out += it }
-        // Doc export is repeated in case BuildConfig primary changes. paste.rs IDs are immutable
-        // and several still serve versionCode 38; they are fallbacks only (max() ignores them
-        // when a later or earlier mirror is higher).
-        out += "https://docs.google.com/document/d/1Qn_N7-ZIB3yZzOSiNKzIU0AT3ZzTJxUb3PN2itGXPzg/export?format=txt"
-        out += "https://paste.rs/9KGsl"
-        out += "https://paste.rs/uPYdi"
-        out += "https://paste.rs/RZvIm"
-        out += "https://paste.rs/p2JaR"
-        out += "https://paste.rs/iU5eQ"
-        return out.toList()
-    }
-
-    fun driveDownloadUrl(fileId: String): String =
-        "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
-
     fun localVersionCode(): Int = BuildConfig.VERSION_CODE
 
     fun localVersionName(): String = BuildConfig.VERSION_NAME
 
-    /**
-     * Highest versionCode across every reachable mirror.
-     * A stuck immutable paste (e.g. version 38) must not hide a later Doc/Drive mirror at 41.
-     * Failures are skipped; a lower-but-valid JSON is kept only until a higher one is seen.
-     */
     suspend fun check(context: Context, manual: Boolean): CheckResult =
         withContext(Dispatchers.IO) {
-            val errors = mutableListOf<String>()
-            var best: LatestInfo? = null
-            // v0.50: GitHub releases/latest is one more mirror; max() still decides.
-            try {
-                fetchGithubLatest()?.let { best = it }
+            val info = try {
+                fetchGithubLatest()
             } catch (e: Exception) {
-                errors += "${e.message ?: "error"} @ github"
-            }
-            for (url in latestJsonCandidates()) {
-                try {
-                    val parsed = fetchLatest(url) ?: continue
-                    val current = best
-                    if (current == null || parsed.versionCode > current.versionCode) {
-                        best = parsed
-                    }
-                } catch (e: Exception) {
-                    errors += "${e.message ?: "error"} @ ${url.take(64)}"
-                }
-            }
-            val info = best
-            if (info == null) {
-                return@withContext CheckResult.Error(
-                    errors.lastOrNull() ?: "Could not read latest.json",
-                )
-            }
+                return@withContext CheckResult.Error(e.message ?: "GitHub check failed")
+            } ?: return@withContext CheckResult.Error("No usable GitHub release")
             if (info.versionCode <= localVersionCode()) {
                 return@withContext CheckResult.UpToDate
             }
@@ -172,10 +107,8 @@ object UpdateChecker {
         info: LatestInfo,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): InstallPrepResult = withContext(Dispatchers.IO) {
-        val urls = info.downloadUrlCandidates()
-        if (urls.isEmpty()) {
-            return@withContext InstallPrepResult.Failed("No apkUrl / apkDriveFileId")
-        }
+        val url = info.apkUrl?.trim()?.takeIf { it.startsWith("https://") }
+            ?: return@withContext InstallPrepResult.Failed("No apkUrl")
         val expected = info.sha256.trim().lowercase()
         if (expected.length != 64 || expected.any { it !in "0123456789abcdef" }) {
             return@withContext InstallPrepResult.Failed("Invalid sha256 in latest.json")
@@ -184,24 +117,7 @@ object UpdateChecker {
         val out = File(dir, "POL-80-${info.versionName}.apk")
         try {
             if (out.exists()) out.delete()
-            var lastErr: Exception? = null
-            var downloaded = false
-            for (url in urls) {
-                try {
-                    if (out.exists()) out.delete()
-                    downloadToFile(url, out, onProgress)
-                    downloaded = true
-                    break
-                } catch (e: Exception) {
-                    lastErr = e
-                    out.delete()
-                }
-            }
-            if (!downloaded) {
-                return@withContext InstallPrepResult.Failed(
-                    lastErr?.message ?: "APK download failed",
-                )
-            }
+            downloadToFile(url, out, onProgress)
             val actual = sha256Hex(out)
             if (actual != expected) {
                 out.delete()
@@ -244,7 +160,7 @@ object UpdateChecker {
         }
     }
 
-        internal fun parseLatest(json: String): LatestInfo? {
+    internal fun parseLatest(json: String): LatestInfo? {
         val trimmed = json.trim().removePrefix("﻿")
         val start = trimmed.indexOf('{')
         val end = trimmed.lastIndexOf('}')
@@ -257,9 +173,6 @@ object UpdateChecker {
             root.optString("sha256sum", "")
         }
         if (sha.isBlank()) return null
-        val driveId = root.optString("apkDriveFileId", "")
-            .ifBlank { root.optString("apk_drive_file_id", "") }
-            .ifBlank { null }
         val apkUrl = root.optString("apkUrl", "")
             .ifBlank { root.optString("apk_url", "") }
             .ifBlank { root.optString("downloadUrl", "") }
@@ -268,7 +181,6 @@ object UpdateChecker {
         return LatestInfo(
             versionCode = code,
             versionName = name,
-            apkDriveFileId = driveId,
             apkUrl = apkUrl,
             sha256 = sha.trim().lowercase(),
             notes = notes,
@@ -320,7 +232,6 @@ object UpdateChecker {
         return LatestInfo(
             versionCode = code,
             versionName = root.optString("name", "").ifBlank { tag.removePrefix("v") },
-            apkDriveFileId = null,
             apkUrl = apkUrl ?: return null,
             sha256 = sha.lowercase(),
             notes = null,
@@ -335,13 +246,6 @@ object UpdateChecker {
         return if (minor.isEmpty()) major else major * 100 + (minor.toIntOrNull() ?: return null)
     }
 
-    private suspend fun fetchLatest(url: String): LatestInfo? =
-        withContext(Dispatchers.IO) {
-            if (url.isBlank()) return@withContext null
-            val body = httpGetString(url)
-            parseLatest(body)
-        }
-
     private fun httpGetString(urlSpec: String): String {
         val conn = openFollow(urlSpec)
         try {
@@ -349,17 +253,12 @@ object UpdateChecker {
                 throw IllegalStateException("HTTP ${conn.responseCode} for latest.json")
             }
             val text = conn.inputStream.bufferedReader().use { it.readText() }
-            // Drive sometimes returns an HTML interstitial / login wall; JSON must start with {
             val trimmed = text.trim().removePrefix("\uFEFF")
             if (!trimmed.startsWith("{")) {
                 val lower = trimmed.lowercase()
                 when {
-                    "accounts.google.com" in lower || "sign in" in lower ->
-                        throw IllegalStateException(
-                            "Drive latest.json needs sign-in — Share → Anyone with the link",
-                        )
                     "<html" in lower || "<!doctype" in lower ->
-                        throw IllegalStateException("latest.json was HTML (not public / wrong id)")
+                        throw IllegalStateException("latest.json was HTML ")
                     else ->
                         throw IllegalStateException("latest.json was not JSON")
                 }
@@ -382,7 +281,7 @@ object UpdateChecker {
             }
             val ctype = conn.contentType.orEmpty()
             if (ctype.contains("text/html", ignoreCase = true)) {
-                throw IllegalStateException("APK download returned HTML (file not public?)")
+                throw IllegalStateException("APK download returned HTML ")
             }
             val total = conn.contentLengthLong.coerceAtLeast(-1L)
             conn.inputStream.use { input ->
@@ -434,12 +333,6 @@ object UpdateChecker {
                 }
                 current = if (loc.startsWith("http")) loc else {
                     URL(URL(current), loc).toString()
-                }
-                // Login wall → not publicly shared
-                if (current.contains("accounts.google.com")) {
-                    throw IllegalStateException(
-                        "Drive file requires sign-in — set sharing to Anyone with the link",
-                    )
                 }
                 continue
             }

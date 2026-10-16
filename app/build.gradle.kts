@@ -13,25 +13,8 @@ android {
         applicationId = "com.bare.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.50-github-ota"
-
-        // v0.47: Doc export PRIMARY; Drive JSON next; paste.rs last. Selection is max versionCode.
-        buildConfigField(
-            "String",
-            "UPDATE_JSON_URL",
-            "\"https://docs.google.com/document/d/1Qn_N7-ZIB3yZzOSiNKzIU0AT3ZzTJxUb3PN2itGXPzg/export?format=txt\"",
-        )
-        buildConfigField(
-            "String",
-            "UPDATE_JSON_DRIVE_FILE_ID",
-            "\"1TBoFYbGBX_JIK1lrUJjaIruDmxqKnP1H\"",
-        )
-        buildConfigField(
-            "String",
-            "UPDATE_JSON_FALLBACK_URL",
-            "\"https://drive.usercontent.google.com/download?id=1TBoFYbGBX_JIK1lrUJjaIruDmxqKnP1H&export=download&confirm=t\"",
-        )
+        versionCode = 51
+        versionName = "0.51-gh-only"
     }
 
     buildTypes {
