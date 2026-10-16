@@ -101,7 +101,7 @@ minimal-launcher/
 │   │   ├── WeatherRepo.kt               # Open-Meteo HI/LO + 30min cache
 │   │   ├── ContactsRepo.kt              # READ_CONTACTS fuzzy people + Phone/WA intents
 │   │   ├── FlashlightController.kt      # CameraManager torch toggle
-│   │   ├── UpdateChecker.kt             # Drive/HTTPS OTA latest.json + APK install
+│   │   ├── UpdateChecker.kt             # GitHub releases OTA + APK install
 │   │   └── Theme.kt                     # Style D Miami dusk color tokens
 │   └── res/
 └── README.md
