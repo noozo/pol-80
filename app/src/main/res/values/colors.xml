@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <!-- Style D Miami dusk -->
+    <color name="miami_bg">#FF050510</color>
+    <color name="miami_surface">#E612081F</color>
+    <color name="miami_magenta">#FFFF2D95</color>
+    <color name="miami_cyan">#FF00E5FF</color>
+    <color name="miami_coral">#FFF06050</color>
+    <color name="miami_violet">#FF4A1880</color>
+    <color name="miami_text">#FFF5F0FF</color>
+    <color name="miami_muted">#FF9A90B8</color>
+</resources>

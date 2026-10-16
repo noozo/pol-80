@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Slack-style hash (four rounded bars); white fills tint on palms header. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Left vertical capsule -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,3.5C7,2.67 7.67,2 8.5,2S10,2.67 10,3.5v7H7.5C7.22,10.5 7,10.28 7,10V3.5zM7,12h3v8.5c0,0.83 -0.67,1.5 -1.5,1.5S7,21.33 7,20.5V12z" />
+    <!-- Right vertical capsule -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,3.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5V10c0,0.28 -0.22,0.5 -0.5,0.5H14V3.5zM14,12h3v8.5c0,0.83 -0.67,1.5 -1.5,1.5s-1.5,-0.67 -1.5,-1.5V12z" />
+    <!-- Top horizontal capsule -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.5,7C2.67,7 2,7.67 2,8.5S2.67,10 3.5,10H10V7.5C10,7.22 9.78,7 9.5,7H3.5zM12,7h8.5c0.83,0 1.5,0.67 1.5,1.5S21.33,10 20.5,10H12V7z" />
+    <!-- Bottom horizontal capsule -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.5,14C2.67,14 2,14.67 2,15.5S2.67,17 3.5,17H9.5c0.28,0 0.5,-0.22 0.5,-0.5V14H3.5zM12,14h8.5c0.83,0 1.5,0.67 1.5,1.5s-0.67,1.5 -1.5,1.5H12V14z" />
+</vector>

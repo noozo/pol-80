@@ -1,0 +1,29 @@
+# build output
+build/
+app/build/
+.gradle/
+.kotlin/
+.externalNativeBuild
+.cxx
+/captures
+# local / secrets
+local.properties
+*.keystore
+*.jks
+keystore.properties
+signing.properties
+*.env
+.env*
+google-services.json
+# artifacts
+*.apk
+*.apk.idsig
+*.ap_
+*.aab
+*.sha256
+*.bak
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
