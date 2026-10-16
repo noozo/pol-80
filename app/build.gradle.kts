@@ -13,8 +13,8 @@ android {
         applicationId = "com.bare.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 49
-        versionName = "0.49-compact-header"
+        versionCode = 50
+        versionName = "0.50-github-ota"
 
         // v0.47: Doc export PRIMARY; Drive JSON next; paste.rs last. Selection is max versionCode.
         buildConfigField(

@@ -18,7 +18,7 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Google Drive / HTTPS OTA updates for POL-80.
+ * GitHub releases + Google Drive / HTTPS OTA updates for POL-80.
  *
  * Fetches latest.json from every mirror in [latestJsonCandidates] (Doc export, Drive
  * JSON, then immutable paste.rs fallbacks) and keeps the **maximum** versionCode.
@@ -110,6 +110,12 @@ object UpdateChecker {
         withContext(Dispatchers.IO) {
             val errors = mutableListOf<String>()
             var best: LatestInfo? = null
+            // v0.50: GitHub releases/latest is one more mirror; max() still decides.
+            try {
+                fetchGithubLatest()?.let { best = it }
+            } catch (e: Exception) {
+                errors += "${e.message ?: "error"} @ github"
+            }
             for (url in latestJsonCandidates()) {
                 try {
                     val parsed = fetchLatest(url) ?: continue
@@ -269,6 +275,66 @@ object UpdateChecker {
         )
     }
 
+    const val GITHUB_LATEST_API = "https://api.github.com/repos/noozo/pol-80/releases/latest"
+
+    /**
+     * Anonymous GitHub releases/latest. Prefers a latest.json asset; otherwise derives
+     * versionCode from the tag (v0.50 -> 50, v50 -> 50) and needs a sha256 in the body
+     * ("sha256: <hex>"). The APK asset browser_download_url becomes apkUrl.
+     */
+    private fun fetchGithubLatest(): LatestInfo? {
+        val conn = openFollow(GITHUB_LATEST_API, "application/vnd.github+json")
+        val text = try {
+            if (conn.responseCode !in 200..299) {
+                throw IllegalStateException("HTTP ${conn.responseCode} from GitHub")
+            }
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
+        val root = JSONObject(text)
+        val assets = root.optJSONArray("assets")
+        var apkUrl: String? = null
+        var jsonUrl: String? = null
+        if (assets != null) {
+            for (i in 0 until assets.length()) {
+                val a = assets.optJSONObject(i) ?: continue
+                val name = a.optString("name", "")
+                val url = a.optString("browser_download_url", "")
+                if (!url.startsWith("https://")) continue
+                if (name.endsWith(".apk", ignoreCase = true) && apkUrl == null) apkUrl = url
+                if (name.equals("latest.json", ignoreCase = true)) jsonUrl = url
+            }
+        }
+        if (jsonUrl != null) {
+            val parsed = runCatching { parseLatest(httpGetString(jsonUrl)) }.getOrNull()
+            if (parsed != null) {
+                return if (parsed.apkUrl == null && apkUrl != null) parsed.copy(apkUrl = apkUrl) else parsed
+            }
+        }
+        val tag = root.optString("tag_name", "")
+        val code = parseTagVersionCode(tag) ?: return null
+        val body = root.optString("body", "")
+        val sha = Regex("(?i)sha-?256[^0-9a-f]*([0-9a-f]{64})").find(body)?.groupValues?.get(1)
+            ?: return null
+        return LatestInfo(
+            versionCode = code,
+            versionName = root.optString("name", "").ifBlank { tag.removePrefix("v") },
+            apkDriveFileId = null,
+            apkUrl = apkUrl ?: return null,
+            sha256 = sha.lowercase(),
+            notes = null,
+        )
+    }
+
+    /** "v0.50" -> 50, "v0.50-x" -> 50, "v50" -> 50, "v1.02" -> 102. */
+    internal fun parseTagVersionCode(tag: String): Int? {
+        val m = Regex("^v?(\\d+)(?:\\.(\\d+))?").find(tag.trim()) ?: return null
+        val major = m.groupValues[1].toIntOrNull() ?: return null
+        val minor = m.groupValues[2]
+        return if (minor.isEmpty()) major else major * 100 + (minor.toIntOrNull() ?: return null)
+    }
+
     private suspend fun fetchLatest(url: String): LatestInfo? =
         withContext(Dispatchers.IO) {
             if (url.isBlank()) return@withContext null
@@ -347,7 +413,7 @@ object UpdateChecker {
         }
     }
 
-    private fun openFollow(urlSpec: String): HttpURLConnection {
+    private fun openFollow(urlSpec: String, accept: String = "*/*"): HttpURLConnection {
         var current = urlSpec
         var redirects = 0
         while (true) {
@@ -357,7 +423,7 @@ object UpdateChecker {
                 readTimeout = 60_000
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "POL-80-Updater/${BuildConfig.VERSION_NAME}")
-                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Accept", accept)
             }
             val code = conn.responseCode
             if (code in 300..399) {
