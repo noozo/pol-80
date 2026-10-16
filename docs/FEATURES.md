@@ -30,7 +30,7 @@ Release metadata: **versionCode 38 · **versionName 0.38-portrait-lock** · pack
 - **Now playing** — when a MediaSession is active (playing/paused), a strip under the status metrics shows title (+ artist), prev/play-pause/next via MediaController; tap title opens the media app. Uses MediaSessionManager with the existing NotificationListener ComponentName (same access as WA/PR).
 - **Style D Miami dusk chrome** — palm/dusk bitmap behind header + dock, light readable scrim (~20–40%), cyan–magenta neon edges, dusk coral underline, cyan page-dot bloom; icon labels bright `#F5F0FF` all-caps. Wallpaper unchanged.
 - **Tech header** — compact monospace `SYS` time + date + version stamp; icon metrics (phone / SMS / WhatsApp / mail / Slack) with counts; tap to open each app; amber (≥1) / red (≥5) value colors; tap header to expand drawer (battery, network, next calendar event).
-- **OTA updates** — header ⋮ → **Check for updates**; auto-check ~every 15 minutes while the launcher UI is running. Fetches `POL-80-latest.json` over HTTPS; if remote `versionCode` > local, shows **Update** / **Later**. Update downloads APK to cache, verifies SHA-256, launches the package installer (`REQUEST_INSTALL_PACKAGES`). Later snoozes until a newer versionCode or 24h.
+- **OTA updates** — header ⋮ → **Check for updates**; auto-check ~every 15 minutes while the launcher UI is running. Reads the latest GitHub release; if remote `versionCode` > local, shows **Update** / **Later**. Update downloads APK to cache, verifies SHA-256, launches the package installer (`REQUEST_INSTALL_PACKAGES`). Later snoozes until a newer versionCode or 24h.
 - **Widgets** — custom preview picker (grouped by app, `loadPreviewImage`) places on the current page; system picker fallback; remove in edit mode.
 
 ## Tech status counters
@@ -64,34 +64,9 @@ Header shows icon + count for each channel (bright icons on palms chrome), e.g. 
 On first launch POL-80 requests `READ_CALL_LOG` and `READ_SMS`. You can also tap the status line later to re-request missing runtime permissions, or enable them under **Settings → Apps → POL-80 → Permissions**.
 
 
-## OTA updates (Drive + HTTPS)
+## OTA updates (GitHub releases)
 
-Hosted manifest **`POL-80-latest.json`** (also on Google Drive):
-
-| Field | Meaning |
-|-------|---------|
-| `versionCode` / `versionName` | Remote app version |
-| `apkDriveFileId` | Drive file id for the APK |
-| `apkUrl` | Direct HTTPS APK URL (preferred for download) |
-| `sha256` | Hex digest of the APK |
-| `notes` | Dialog blurb |
-
-**OTA Doc (primary latest.json, share Anyone with the link):**  
-`https://docs.google.com/document/d/1Qn_N7-ZIB3yZzOSiNKzIU0AT3ZzTJxUb3PN2itGXPzg/export?format=txt`
-
-**Drive JSON file id (this release):** `1PvDBfBdkDj4y_CuMFjt-I7XJwwpPx9_f`  
-Drive link: https://drive.google.com/file/d/19QDSpUe1MW-rGPRdpj0JtCL5FeWHc9Oi/view?usp=drivesdk
-
-**How the app fetches JSON (in order) — v0.35+:**
-1. `BuildConfig.UPDATE_JSON_URL` — Google Doc export (content-updatable):  
-   `https://docs.google.com/document/d/1Qn_N7-ZIB3yZzOSiNKzIU0AT3ZzTJxUb3PN2itGXPzg/export?format=txt`
-2. Drive usercontent / uc? for `UPDATE_JSON_DRIVE_FILE_ID` (must be **Anyone with the link**)
-3. Gist + GitHub raw fallbacks (note: GitHub Soft404 for anonymous as of 2026-09-30)
-
-APK Drive (this release): https://drive.google.com/file/d/19QDSpUe1MW-rGPRdpj0JtCL5FeWHc9Oi/view?usp=drivesdk  
-sha256: `cebfcfc836736f0b55869df9870e2300b883ce67f261c7281797eeea5a94eeb2`
-
-To publish a new build: upload APK + `POL-80-latest.json` to Drive, update the gist/GitHub mirrors with the new `versionCode` / `sha256` / ids, bump `versionCode` in `app/build.gradle.kts`.
+Since 0.51 the app only reads `https://api.github.com/repos/noozo/pol-80/releases/latest`. It uses the release's `latest.json` asset (`versionCode`, `versionName`, `apkUrl`, `sha256`, `notes`); if that asset is missing, it falls back to the `v0.NN` tag and the sha256 in the release notes. The APK is verified by SHA-256 before the installer opens. See the README for how to ship a release.
 
 ## Build
 
@@ -99,7 +74,7 @@ To publish a new build: upload APK + `POL-80-latest.json` to Drive, update the g
 JAVA_HOME=/workspace/.tools/jdk-17 ./gradlew assembleDebug
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk` (release copy: `POL-80-0.38.apk`)
+APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Install / set as Home
 
