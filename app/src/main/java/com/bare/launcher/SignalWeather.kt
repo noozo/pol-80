@@ -230,7 +230,8 @@ object SignalWeather {
         return try {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
                 ?: return null
-            if (Build.VERSION.SDK_INT >= 28) {
+            // getCellSignalStrengths() is API 29; on 28 it is NoSuchMethodError (an Error).
+            if (Build.VERSION.SDK_INT >= 29) {
                 val ss = tm.signalStrength ?: return null
                 val vals = ss.cellSignalStrengths
                 val best = vals.maxOfOrNull { it.dbm } ?: return null

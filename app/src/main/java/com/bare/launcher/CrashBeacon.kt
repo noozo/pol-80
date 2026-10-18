@@ -40,7 +40,8 @@ object CrashBeacon {
         if (installed) return
         synchronized(this) {
             if (installed) return
-            val app = context.applicationContext
+            // In Application.attachBaseContext applicationContext is still null.
+            val app = context.applicationContext ?: context
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
                 try {
@@ -77,9 +78,83 @@ object CrashBeacon {
         val fullClass = throwable.javaClass.name.ifBlank { simple }
         val at = System.currentTimeMillis()
         val line = listOf(at.toString(), simple, fullClass, frame).joinToString(SEP)
-        val file = File(context.applicationContext.filesDir, FILE_NAME)
+        val dir = (context.applicationContext ?: context).filesDir
+        val file = File(dir, FILE_NAME)
         file.parentFile?.mkdirs()
         file.writeText(line)
+        // v0.54: full report for the plain-View crash screen (shown only after a startup crash).
+        try {
+            writeReport(dir, throwable, at)
+        } catch (_: Throwable) {
+        }
+    }
+
+    // ---------------- v0.54 startup crash catcher ----------------
+
+    private const val REPORT_FILE = "crash_report.txt"
+    private const val REPORT_MAX_CHARS = 16_000
+    /** Show a stored startup-crash report only this long after it was written. */
+    const val REPORT_FRESH_MS = 24L * 60L * 60L * 1000L
+
+    /**
+     * True from MainActivity.onCreate until ~3s after the first onResume. A crash in that
+     * window is a "startup crash" and earns the error screen on the next launch.
+     */
+    @Volatile
+    var startupPhase: Boolean = false
+
+    data class Report(val atMillis: Long, val startup: Boolean, val text: String)
+
+    private fun writeReport(dir: File, throwable: Throwable, at: Long) {
+        val stamp = try {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US).format(Date(at))
+        } catch (_: Exception) {
+            at.toString()
+        }
+        val header = buildString {
+            append("POL-80 crash report\n")
+            append("version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+            append("android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n")
+            append("device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (${android.os.Build.DEVICE})\n")
+            append("time: $stamp\n")
+            append("startup: $startupPhase\n\n")
+        }
+        val text = (header + throwable.stackTraceToString()).take(REPORT_MAX_CHARS)
+        // First line is machine-readable: at|startup
+        File(dir, REPORT_FILE).writeText("$at|$startupPhase\n$text")
+    }
+
+    /** A fresh report from a startup crash, or null. Never throws. */
+    fun pendingStartupReport(context: Context, now: Long = System.currentTimeMillis()): Report? =
+        try {
+            val f = File(context.applicationContext.filesDir, REPORT_FILE)
+            if (!f.isFile) {
+                null
+            } else {
+                val raw = f.readText()
+                val nl = raw.indexOf('\n')
+                val meta = if (nl > 0) raw.substring(0, nl).split('|') else emptyList()
+                val at = meta.getOrNull(0)?.toLongOrNull() ?: f.lastModified()
+                val startup = meta.getOrNull(1) == "true"
+                val age = now - at
+                when {
+                    age > REPORT_FRESH_MS || age < -60_000L -> {
+                        f.delete()
+                        null
+                    }
+                    !startup -> null
+                    else -> Report(at, true, if (nl > 0) raw.substring(nl + 1) else raw)
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+
+    fun clearReport(context: Context) {
+        try {
+            File(context.applicationContext.filesDir, REPORT_FILE).delete()
+        } catch (_: Exception) {
+        }
     }
 
     data class Beacon(

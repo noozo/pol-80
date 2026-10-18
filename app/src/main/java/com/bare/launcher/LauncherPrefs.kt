@@ -354,6 +354,13 @@ class LauncherPrefs(context: Context) {
         return next
     }
 
+    /** v0.54: Call log / SMS auto-prompt already shown once on this install. */
+    fun wasStatusPermsAutoAsked(): Boolean = prefs.getBoolean(KEY_STATUS_PERMS_AUTO_ASKED, false)
+
+    fun setStatusPermsAutoAsked() {
+        prefs.edit().putBoolean(KEY_STATUS_PERMS_AUTO_ASKED, true).apply()
+    }
+
     /** Shake → flashlight toggle. Off by default; does not replace dock torch. */
     fun isShakeFlashlightEnabled(): Boolean =
         prefs.getBoolean(KEY_SHAKE_FLASHLIGHT, false)
@@ -403,6 +410,7 @@ class LauncherPrefs(context: Context) {
         private const val KEY_SEARCH_HISTORY = "search_history"
         private const val KEY_PHOSPHOR_MODE = "phosphor_mode"
         private const val KEY_SHAKE_FLASHLIGHT = "shake_flashlight"
+        private const val KEY_STATUS_PERMS_AUTO_ASKED = "status_perms_auto_asked"
         private const val KEY_PORTRAIT_LOCK = "portrait_lock"
         private const val SEP = "\u001f"
     }

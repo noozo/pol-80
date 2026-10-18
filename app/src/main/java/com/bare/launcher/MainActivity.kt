@@ -424,11 +424,33 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             finishAddWidget(id)
         }
 
+    /** v0.54: false while the plain-View crash screen is up; lifecycle hooks skip work. */
+    private var launcherStarted = false
+    private var startupDonePosted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Activity-level chain (no-op if BareApp already installed). Does not
         // replace the system handler — CrashBeacon keeps the previous one.
         CrashBeacon.install(this)
+        // v0.54: last start crashed → show the report (plain Views) before any launcher code.
+        val report = CrashBeacon.pendingStartupReport(this)
+        if (report != null) {
+            CrashScreen.show(this, report) {
+                // Activity is already started/resumed: run the launcher's own start/resume work.
+                startLauncher()
+                launcherOnStart()
+                launcherOnResume()
+            }
+            return
+        }
+        startLauncher()
+    }
+
+    private fun startLauncher() {
+        if (launcherStarted) return
+        launcherStarted = true
+        CrashBeacon.startupPhase = true
         prefs = LauncherPrefs(this)
         widgetHelper = WidgetHostHelper(this, prefs)
         flashlight = FlashlightController(this)
@@ -519,6 +541,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (!launcherStarted) return
+        launcherOnStart()
+    }
+
+    private fun launcherOnStart() {
         widgetHelper.startListening()
         statusTickState.intValue++
     }
@@ -532,6 +559,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (!launcherStarted) return
         if (isSystemHomeIntent(intent)) {
             resetToHomeState(requestSplash = true)
         }
@@ -543,7 +571,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     override fun onStop() {
-        widgetHelper.stopListening()
+        if (launcherStarted) widgetHelper.stopListening()
         super.onStop()
     }
 
@@ -719,6 +747,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!launcherStarted) return
+        launcherOnResume()
+    }
+
+    private fun launcherOnResume() {
+        if (!startupDonePosted) {
+            startupDonePosted = true
+            window.decorView.postDelayed({ CrashBeacon.startupPhase = false }, 3_000L)
+        }
         statusTickState.intValue++
         syncShakeDetector()
         edgeClockSensor?.start()
@@ -732,6 +769,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     override fun onDestroy() {
+        if (!launcherStarted) {
+            super.onDestroy()
+            return
+        }
         unregisterChargeRitual()
         edgeClockSensor?.stop()
         edgeClockSensor = null
@@ -1047,9 +1088,13 @@ private fun BareLauncher(
     LaunchedEffect(statusTick) {
         techStatus = StatusMonitor.snapshot(context)
         faultBeacon = CrashBeacon.peek(context)
+        // v0.54: auto-ask Call log / SMS once per install; after that only from the status-line tap.
         if (!askedStatusPerms) {
             askedStatusPerms = true
-            onRequestStatusPermissions()
+            if (!prefs.wasStatusPermsAutoAsked()) {
+                prefs.setStatusPermsAutoAsked()
+                onRequestStatusPermissions()
+            }
         }
     }
 

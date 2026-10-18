@@ -13,8 +13,8 @@ android {
         applicationId = "com.bare.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 53
-        versionName = "0.53-stamp-gesture-lock"
+        versionCode = 54
+        versionName = "0.54-startup-fix"
     }
 
     buildTypes {
@@ -65,5 +65,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.security:security-crypto:1.0.0")
     implementation("androidx.biometric:biometric:1.1.0")
+    // biometric 1.1.0 pulls fragment 1.2.5, which rejects registerForActivityResult request codes.
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

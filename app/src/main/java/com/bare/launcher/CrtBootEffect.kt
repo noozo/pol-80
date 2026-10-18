@@ -381,16 +381,10 @@ internal fun Modifier.crtHomeWarp(anim: CrtBootAnim): Modifier {
     // Collapse alone must not keep the home warped after a finished sting.
     val active = (anim.showing || warp > 0.001f || anim.overlayAlpha > 0.001f) &&
         (warp > 0.001f || anim.fringe > 0.001f || anim.overlayAlpha > 0.001f || anim.showing)
-    val shader = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try {
-                RuntimeShader(CRT_WARP_AGSL)
-            } catch (_: Exception) {
-                null
-            }
-        } else {
-            null
-        }
+    // Held as Any? so this function never names RuntimeShader: on API < 33 ART fails
+    // class resolution (NoClassDefFoundError) at the first typed reference, null or not.
+    val shader: Any? = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) CrtShaderApi33.create() else null
     }
     val timeSec = remember(anim.requestId, anim.showing) {
         SystemClock.elapsedRealtime() / 1000f
@@ -418,15 +412,9 @@ internal fun Modifier.crtHomeWarp(anim: CrtBootAnim): Modifier {
             clip = false
 
             if (shader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && warp > 0.004f) {
-                shader.setFloatUniform("resolution", size.width, size.height)
-                shader.setFloatUniform("amount", warp)
-                shader.setFloatUniform("fringe", fr * warp)
-                shader.setFloatUniform("roll", ry)
-                shader.setFloatUniform("brightness", b)
-                shader.setFloatUniform("time", timeSec + warp * 3f)
-                renderEffect = AndroidRenderEffect
-                    .createRuntimeShaderEffect(shader, "content")
-                    .asComposeRenderEffect()
+                renderEffect = CrtShaderApi33.effect(
+                    shader, size.width, size.height, warp, fr * warp, ry, b, timeSec + warp * 3f,
+                )
             } else {
                 renderEffect = null
             }
@@ -859,4 +847,29 @@ internal fun CrtPowerDownFlicker(anim: CrtBootAnim) {
                 )
             },
     )
+}
+
+
+/** Every RuntimeShader / RenderEffect reference lives here; only touched on API 33+. */
+@androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private object CrtShaderApi33 {
+    fun create(): Any? = try {
+        RuntimeShader(CRT_WARP_AGSL)
+    } catch (_: Exception) {
+        null
+    }
+
+    fun effect(
+        shaderAny: Any,
+        w: Float, h: Float, amount: Float, fringe: Float, roll: Float, brightness: Float, time: Float,
+    ): androidx.compose.ui.graphics.RenderEffect? {
+        val shader = shaderAny as? RuntimeShader ?: return null
+        shader.setFloatUniform("resolution", w, h)
+        shader.setFloatUniform("amount", amount)
+        shader.setFloatUniform("fringe", fringe)
+        shader.setFloatUniform("roll", roll)
+        shader.setFloatUniform("brightness", brightness)
+        shader.setFloatUniform("time", time)
+        return AndroidRenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+    }
 }
