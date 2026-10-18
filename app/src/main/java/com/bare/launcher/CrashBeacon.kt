@@ -103,6 +103,10 @@ object CrashBeacon {
     @Volatile
     var startupPhase: Boolean = false
 
+    /** Set by MainActivity.startLauncher; the Activity then owns closing [startupPhase]. */
+    @Volatile
+    var activityClaimedStartup: Boolean = false
+
     data class Report(val atMillis: Long, val startup: Boolean, val text: String)
 
     private fun writeReport(dir: File, throwable: Throwable, at: Long) {
@@ -120,8 +124,55 @@ object CrashBeacon {
             append("startup: $startupPhase\n\n")
         }
         val text = (header + throwable.stackTraceToString()).take(REPORT_MAX_CHARS)
-        // First line is machine-readable: at|startup
-        File(dir, REPORT_FILE).writeText("$at|$startupPhase\n$text")
+        // First line is machine-readable: at|startup|versionCode
+        File(dir, REPORT_FILE).writeText("$at|$startupPhase|${BuildConfig.VERSION_CODE}\n$text")
+        if (startupPhase) {
+            // v0.55: crash-loop log (one timestamp per startup crash, this versionCode).
+            val log = File(dir, LOOP_FILE)
+            val keep = readLoop(log).filter { at - it.first < LOOP_WINDOW_MS && it.second == BuildConfig.VERSION_CODE }
+            log.writeText((keep + (at to BuildConfig.VERSION_CODE)).takeLast(8)
+                .joinToString("\n") { "${it.first}|${it.second}" })
+        }
+    }
+
+    private const val LOOP_FILE = "startup_crashes.txt"
+    /** Two startup crashes inside this window = crash loop. */
+    const val LOOP_WINDOW_MS = 2L * 60L * 1000L
+
+    private fun readLoop(f: File): List<Pair<Long, Int>> = try {
+        if (!f.isFile) emptyList() else f.readLines().mapNotNull { line ->
+            val p = line.split('|')
+            val t = p.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+            t to (p.getOrNull(1)?.toIntOrNull() ?: -1)
+        }
+    } catch (_: Throwable) {
+        emptyList()
+    }
+
+    /** Startup crashes of this build within [LOOP_WINDOW_MS] of now. */
+    fun recentStartupCrashes(context: Context, now: Long = System.currentTimeMillis()): Int = try {
+        readLoop(File(context.applicationContext.filesDir, LOOP_FILE))
+            .count { it.second == BuildConfig.VERSION_CODE && now - it.first in 0..LOOP_WINDOW_MS }
+    } catch (_: Throwable) {
+        0
+    }
+
+    /**
+     * Report to show before any launcher code runs: the saved startup report, or, after
+     * 2+ startup crashes within ~2 min with no readable report, a minimal one.
+     */
+    fun rescueReport(context: Context, now: Long = System.currentTimeMillis()): Report? {
+        pendingStartupReport(context, now)?.let { return it }
+        val n = recentStartupCrashes(context, now)
+        if (n < 2) return null
+        return Report(
+            now,
+            true,
+            "POL-80 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) crashed $n times while " +
+                "starting in the last 2 minutes.\nNo full report was saved.\n" +
+                "android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n" +
+                "device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+        )
     }
 
     /** A fresh report from a startup crash, or null. Never throws. */
@@ -136,9 +187,12 @@ object CrashBeacon {
                 val meta = if (nl > 0) raw.substring(0, nl).split('|') else emptyList()
                 val at = meta.getOrNull(0)?.toLongOrNull() ?: f.lastModified()
                 val startup = meta.getOrNull(1) == "true"
+                val reportCode = meta.getOrNull(2)?.toIntOrNull()
                 val age = now - at
                 when {
-                    age > REPORT_FRESH_MS || age < -60_000L -> {
+                    // A newer build is installed now: the old crash is history, not a blocker.
+                    (reportCode != null && reportCode < BuildConfig.VERSION_CODE) ||
+                        age > REPORT_FRESH_MS || age < -60_000L -> {
                         f.delete()
                         null
                     }
@@ -151,6 +205,10 @@ object CrashBeacon {
         }
 
     fun clearReport(context: Context) {
+        try {
+            File(context.applicationContext.filesDir, LOOP_FILE).delete()
+        } catch (_: Exception) {
+        }
         try {
             File(context.applicationContext.filesDir, REPORT_FILE).delete()
         } catch (_: Exception) {
@@ -231,5 +289,12 @@ class BareApp : Application() {
         // Before Application.onCreate / Activity.onCreate so launcher crashes
         // still hit this handler. Previous (system) handler stays chained.
         CrashBeacon.install(this)
+        // v0.55: count crashes from process start (not only from MainActivity.onCreate).
+        // If no launcher Activity claims the start (e.g. process up only for the notification
+        // listener), close the window after 15s so later service crashes aren't "startup".
+        CrashBeacon.startupPhase = true
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            if (!CrashBeacon.activityClaimedStartup) CrashBeacon.startupPhase = false
+        }, 15_000L)
     }
 }

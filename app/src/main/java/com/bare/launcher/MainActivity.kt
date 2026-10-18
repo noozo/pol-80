@@ -434,7 +434,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // replace the system handler — CrashBeacon keeps the previous one.
         CrashBeacon.install(this)
         // v0.54: last start crashed → show the report (plain Views) before any launcher code.
-        val report = CrashBeacon.pendingStartupReport(this)
+        // v0.55: also after 2 startup crashes in ~2 min, even without a saved report.
+        val report = CrashBeacon.rescueReport(this)
         if (report != null) {
             CrashScreen.show(this, report) {
                 // Activity is already started/resumed: run the launcher's own start/resume work.
@@ -450,6 +451,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun startLauncher() {
         if (launcherStarted) return
         launcherStarted = true
+        CrashBeacon.activityClaimedStartup = true
         CrashBeacon.startupPhase = true
         prefs = LauncherPrefs(this)
         widgetHelper = WidgetHostHelper(this, prefs)
@@ -1112,8 +1114,9 @@ private fun BareLauncher(
     }
 
     // Auto-check for updates ~every 15 minutes while launcher UI is composed/resumed.
+    // v0.55: the cold-launch check is throttled to once per 10 minutes.
     LaunchedEffect(Unit) {
-        runUpdateCheck(manual = false)
+        if (UpdateChecker.claimLaunchCheck(context)) runUpdateCheck(manual = false)
         while (true) {
             delay(UpdateChecker.AUTO_CHECK_INTERVAL_MS)
             runUpdateCheck(manual = false)

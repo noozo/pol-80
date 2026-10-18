@@ -107,11 +107,20 @@ object UpdateChecker {
         info: LatestInfo,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): InstallPrepResult = withContext(Dispatchers.IO) {
+        downloadAndVerifyBlocking(context, info, onProgress)
+    }
+
+    /** Blocking variant for the plain-View rescue path (call off the main thread). */
+    fun downloadAndVerifyBlocking(
+        context: Context,
+        info: LatestInfo,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): InstallPrepResult = run {
         val url = info.apkUrl?.trim()?.takeIf { it.startsWith("https://") }
-            ?: return@withContext InstallPrepResult.Failed("No apkUrl")
+            ?: return@run InstallPrepResult.Failed("No apkUrl")
         val expected = info.sha256.trim().lowercase()
         if (expected.length != 64 || expected.any { it !in "0123456789abcdef" }) {
-            return@withContext InstallPrepResult.Failed("Invalid sha256 in latest.json")
+            return@run InstallPrepResult.Failed("Invalid sha256 in latest.json")
         }
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         val out = File(dir, "POL-80-${info.versionName}.apk")
@@ -121,7 +130,7 @@ object UpdateChecker {
             val actual = sha256Hex(out)
             if (actual != expected) {
                 out.delete()
-                return@withContext InstallPrepResult.Failed(
+                return@run InstallPrepResult.Failed(
                     "SHA-256 mismatch (got ${actual.take(12)}…)",
                 )
             }
@@ -131,7 +140,7 @@ object UpdateChecker {
                         Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:${context.packageName}"),
                     )
-                    return@withContext InstallPrepResult.NeedPermission(settings)
+                    return@run InstallPrepResult.NeedPermission(settings)
                 }
             }
             val uri = FileProvider.getUriForFile(
@@ -185,6 +194,24 @@ object UpdateChecker {
             sha256 = sha.trim().lowercase(),
             notes = notes,
         )
+    }
+
+    /** Blocking GitHub releases/latest read for the rescue path (call off the main thread). */
+    fun fetchLatestBlocking(): LatestInfo? = fetchGithubLatest()
+
+    private const val KEY_LAST_LAUNCH_CHECK = "last_launch_check_ms"
+    const val LAUNCH_CHECK_MIN_GAP_MS = 10L * 60L * 1000L
+
+    /**
+     * v0.55: cold-launch check gate. True (and records now) when the last launch check is
+     * at least [LAUNCH_CHECK_MIN_GAP_MS] ago, so relaunch loops cannot hammer GitHub.
+     */
+    fun claimLaunchCheck(context: Context, now: Long = System.currentTimeMillis()): Boolean {
+        val p = prefs(context)
+        val last = p.getLong(KEY_LAST_LAUNCH_CHECK, 0L)
+        if (last in 1..now && now - last < LAUNCH_CHECK_MIN_GAP_MS) return false
+        p.edit().putLong(KEY_LAST_LAUNCH_CHECK, now).apply()
+        return true
     }
 
     const val GITHUB_LATEST_API = "https://api.github.com/repos/noozo/pol-80/releases/latest"
