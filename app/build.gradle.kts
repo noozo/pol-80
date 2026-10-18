@@ -13,8 +13,8 @@ android {
         applicationId = "com.bare.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.51-gh-only"
+        versionCode = 52
+        versionName = "0.52-stamp-drag"
     }
 
     buildTypes {

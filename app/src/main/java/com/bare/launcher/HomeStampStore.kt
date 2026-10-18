@@ -81,6 +81,21 @@ object HomeStampStore {
         return trimmed
     }
 
+    /** Save a dragged stamp's new top-left fractions (clamped 0..1); list order is kept. */
+    fun move(context: Context, current: List<Stamp>, id: String, xFrac: Float, yFrac: Float): List<Stamp> {
+        val next = current.map {
+            if (it.id == id) it.copy(xFrac = safeFrac(xFrac, it.xFrac), yFrac = safeFrac(yFrac, it.yFrac)) else it
+        }
+        save(context, next)
+        return next
+    }
+
+    /** NaN / infinite -> [fallback]; otherwise clamped into 0..1. */
+    fun safeFrac(v: Float, fallback: Float): Float {
+        val f = if (v.isNaN() || v.isInfinite()) fallback else v
+        return if (f.isNaN() || f.isInfinite()) 0.5f else f.coerceIn(0f, 1f)
+    }
+
     fun remove(context: Context, current: List<Stamp>, id: String): List<Stamp> {
         val next = current.filterNot { it.id == id }
         save(context, next)
@@ -115,8 +130,8 @@ object HomeStampStore {
             if (id.isBlank()) continue
             val text = o.optString("text", "").trim()
             if (text.isEmpty()) continue
-            val x = o.optDouble("xFrac", 0.7).toFloat()
-            val y = o.optDouble("yFrac", 0.55).toFloat()
+            val x = safeFrac(o.optDouble("xFrac", 0.7).toFloat(), 0.7f)
+            val y = safeFrac(o.optDouble("yFrac", 0.55).toFloat(), 0.55f)
             val at = o.optLong("createdAt", 0L)
             out += Stamp(
                 id = id,

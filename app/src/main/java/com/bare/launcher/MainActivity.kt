@@ -1324,6 +1324,9 @@ private fun BareLauncher(
                 onDelete = { id ->
                     homeStamps = HomeStampStore.remove(context, homeStamps, id)
                 },
+                onMove = { id, xf, yf ->
+                    homeStamps = HomeStampStore.move(context, homeStamps, id, xf, yf)
+                },
                 onShare = { stamp ->
                     shareHomeStamp(context, stamp)
                 },
