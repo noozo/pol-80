@@ -13,8 +13,8 @@ android {
         applicationId = "com.bare.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "0.52-stamp-drag"
+        versionCode = 53
+        versionName = "0.53-stamp-gesture-lock"
     }
 
     buildTypes {

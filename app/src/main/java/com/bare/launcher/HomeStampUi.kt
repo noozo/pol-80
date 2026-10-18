@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -58,6 +60,25 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 
+/**
+ * v0.53: shared, synchronous "a finger is on a stamp" lock.
+ *
+ * Compose runs the stamp chip's Main-pass handlers before the home Box's (ancestor), so the
+ * chip sets [active] on the down event before the home swipe / double-tap detectors see it.
+ * Those detectors then ignore the whole gesture until every pointer is up — drag, long-press,
+ * drop over the bin, or cancel. Plain fields (not Compose state) so reads are immediate.
+ */
+class StampGestureLock {
+    @Volatile var active: Boolean = false
+        internal set
+    @Volatile var lastReleaseMs: Long = 0L
+        internal set
+
+    /** True while a stamp gesture is in progress or just ended (double-tap guard). */
+    fun busy(nowMs: Long = android.os.SystemClock.elapsedRealtime(), graceMs: Long = 450L): Boolean =
+        active || nowMs - lastReleaseMs < graceMs
+}
+
 /** Open composer for a new stamp or an existing one. */
 data class StampComposerState(
     val editId: String?,
@@ -80,6 +101,7 @@ fun HomeStampLayer(
     onDelete: (String) -> Unit,
     onMove: (String, Float, Float) -> Unit,
     onShare: (HomeStampStore.Stamp) -> Unit = {},
+    gestureLock: StampGestureLock? = null,
     modifier: Modifier = Modifier,
 ) {
     if (stamps.isEmpty()) return
@@ -104,6 +126,7 @@ fun HomeStampLayer(
                     parentW = w,
                     parentH = h,
                     enabled = enabled,
+                    gestureLock = gestureLock,
                     onEdit = { onEdit(stamp) },
                     onShare = { onShare(stamp) },
                     onDragStart = {
@@ -222,6 +245,7 @@ private fun HomeStampChip(
     parentW: Float,
     parentH: Float,
     enabled: Boolean,
+    gestureLock: StampGestureLock?,
     onEdit: () -> Unit,
     onShare: () -> Unit,
     onDragStart: () -> Unit,
@@ -266,6 +290,22 @@ private fun HomeStampChip(
             .then(
                 if (enabled) {
                     Modifier
+                        .pointerInput(stamp.id, gestureLock) {
+                            // Gesture lock: claim the whole touch sequence for the stamp.
+                            val lock = gestureLock ?: return@pointerInput
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                lock.active = true
+                                try {
+                                    do {
+                                        val ev = awaitPointerEvent()
+                                    } while (ev.changes.any { it.pressed })
+                                } finally {
+                                    lock.active = false
+                                    lock.lastReleaseMs = android.os.SystemClock.elapsedRealtime()
+                                }
+                            }
+                        }
                         .pointerInput(stamp.id) {
                             detectDragGestures(
                                 onDragStart = {

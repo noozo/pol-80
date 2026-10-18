@@ -875,6 +875,7 @@ private fun BareLauncher(
     var faultBeacon by remember { mutableStateOf(CrashBeacon.peek(context)) }
     var homeStamps by remember { mutableStateOf(HomeStampStore.load(context)) }
     var stampComposer by remember { mutableStateOf<StampComposerState?>(null) }
+    val stampGestureLock = remember { StampGestureLock() }
     var rainDrizzleActive by remember { mutableStateOf(false) }
     var askedStatusPerms by remember { mutableStateOf(false) }
     var nowPlaying by remember { mutableStateOf<NowPlayingInfo?>(null) }
@@ -1240,6 +1241,8 @@ private fun BareLauncher(
                 }
                 detectTapGestures(
                     onDoubleTap = { offset ->
+                        // v0.53: taps on a stamp never create a new stamp underneath it.
+                        if (stampGestureLock.busy()) return@detectTapGestures
                         val box = Offset(size.width.toFloat(), size.height.toFloat())
                         if (box.x <= 1f || box.y <= 1f) return@detectTapGestures
                         val (xf, yf) = stampFractionsFromTap(offset, box)
@@ -1258,6 +1261,10 @@ private fun BareLauncher(
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // v0.53: a gesture that starts on a home stamp (drag, long-press, drop on
+                    // bin) belongs to the stamp. The chip's Main pass runs first and sets the
+                    // lock, so bail here; awaitEachGesture then waits for all pointers up.
+                    if (stampGestureLock.active) return@awaitEachGesture
                     var totalX = 0f
                     var totalY = 0f
                     var lockedVertical: Int = 0 // -1 up, +1 down
@@ -1266,6 +1273,10 @@ private fun BareLauncher(
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) break
+                        // A stamp gesture is live (set by the chip on this sequence): drop the
+                        // whole gesture without acting on release. Not using isConsumed here:
+                        // widgets / pager may consume moves and home swipes must still work there.
+                        if (stampGestureLock.active) return@awaitEachGesture
                         val delta = change.position - change.previousPosition
                         totalX += delta.x
                         totalY += delta.y
@@ -1330,6 +1341,7 @@ private fun BareLauncher(
                 onShare = { stamp ->
                     shareHomeStamp(context, stamp)
                 },
+                gestureLock = stampGestureLock,
             )
             Column(
                 modifier = Modifier
