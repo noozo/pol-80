@@ -13,8 +13,8 @@ android {
         applicationId = "com.bare.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 55
-        versionName = "0.55-launch-update"
+        versionCode = 56
+        versionName = "0.56-fullscreen-apps"
     }
 
     buildTypes {

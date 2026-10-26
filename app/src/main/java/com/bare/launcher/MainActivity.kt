@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -67,6 +68,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -1717,19 +1720,38 @@ private fun BareLauncher(
 
     if (sheetMode != SheetMode.None) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        // 0.56: the app drawer is a full-height sheet (square edges, thin phosphor
+        // handle). The sheet's own window insets keep content clear of the status
+        // and nav bars; its nested-scroll connection means swipe-down only drags
+        // the sheet once the grid is scrolled to the top.
+        val fullDrawer = sheetMode == SheetMode.AppDrawer
         ModalBottomSheet(
             onDismissRequest = { onSheetModeChange(SheetMode.None) },
             sheetState = sheetState,
             containerColor = SheetBg,
             contentColor = BareText,
+            shape = if (fullDrawer) RectangleShape else BottomSheetDefaults.ExpandedShape,
+            dragHandle = if (fullDrawer) {
+                {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 6.dp, bottom = 2.dp)
+                            .size(width = 40.dp, height = 2.dp)
+                            .background(TechGreen.copy(alpha = 0.55f)),
+                    )
+                }
+            } else {
+                { BottomSheetDefaults.DragHandle() }
+            },
         ) {
             when (sheetMode) {
                 SheetMode.AppDrawer -> {
                     AppListSheet(
-                        title = "APPS",
+                        title = "APPS // ${apps.size}",
                         apps = apps,
                         selectedKeys = emptySet(),
                         selectionMode = false,
+                        fullHeight = true,
                         onAppClick = { app ->
                             onSheetModeChange(SheetMode.None)
                             onLaunch(app)
@@ -3608,12 +3630,14 @@ private fun AppListSheet(
     selectionMode: Boolean,
     onAppClick: (LaunchableApp) -> Unit,
     onDone: (() -> Unit)? = null,
+    fullHeight: Boolean = false,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (fullHeight) Modifier.fillMaxHeight() else Modifier)
             .navigationBarsPadding()
-            .padding(bottom = 12.dp),
+            .padding(bottom = if (fullHeight) 4.dp else 12.dp),
     ) {
         if (title != null) {
             Row(
@@ -3641,7 +3665,7 @@ private fun AppListSheet(
             columns = GridCells.Fixed(4),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(420.dp),
+                .then(if (fullHeight) Modifier.weight(1f) else Modifier.height(420.dp)),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
